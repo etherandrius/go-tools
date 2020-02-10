@@ -10,7 +10,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/ast/astutil"
 	"honnef.co/go/tools/facts"
-	"honnef.co/go/tools/lint"
+	"honnef.co/go/tools/runner"
 )
 
 type Options struct {
@@ -148,7 +148,7 @@ func Report(pass *analysis.Pass, node Positioner, message string, opts ...Option
 		opt(cfg)
 	}
 
-	file := lint.DisplayPosition(pass.Fset, node.Pos()).Filename
+	file := runner.DisplayPosition(pass.Fset, node.Pos()).Filename
 	if cfg.FilterGenerated {
 		m := pass.ResultOf[facts.Generated].(map[string]facts.Generator)
 		if _, ok := m[file]; ok {

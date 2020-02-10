@@ -28,11 +28,11 @@ import (
 	"honnef.co/go/tools/internal/sharedcheck"
 	"honnef.co/go/tools/ir"
 	"honnef.co/go/tools/ir/irutil"
-	"honnef.co/go/tools/lint"
 	. "honnef.co/go/tools/lint/lintdsl"
 	"honnef.co/go/tools/pattern"
 	"honnef.co/go/tools/printf"
 	"honnef.co/go/tools/report"
+	"honnef.co/go/tools/runner"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -2397,7 +2397,7 @@ func CheckCyclicFinalizer(pass *analysis.Pass) (interface{}, error) {
 		}
 		for _, b := range mc.Bindings {
 			if b == v {
-				pos := lint.DisplayPosition(pass.Fset, mc.Fn.Pos())
+				pos := runner.DisplayPosition(pass.Fset, mc.Fn.Pos())
 				report.Report(pass, site, fmt.Sprintf("the finalizer closes over the object, preventing the finalizer from ever running (at %s)", pos))
 			}
 		}
@@ -2948,7 +2948,7 @@ func checkCalls(pass *analysis.Pass, rules map[string]CallCheck) (interface{}, e
 			return
 		}
 
-		r, ok := rules[lint.FuncName(obj)]
+		r, ok := rules[code.FuncName(obj)]
 		if !ok {
 			return
 		}

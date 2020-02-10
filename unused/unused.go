@@ -16,6 +16,7 @@ import (
 	"honnef.co/go/tools/internal/passes/buildir"
 	"honnef.co/go/tools/ir"
 	"honnef.co/go/tools/lint"
+	"honnef.co/go/tools/runner"
 )
 
 // The graph we construct omits nodes along a path that do not
@@ -512,7 +513,7 @@ func (c *Checker) ProblemObject(fset *token.FileSet, obj types.Object) lint.Prob
 		checkName = "U1001"
 	}
 	return lint.Problem{
-		Pos:     lint.DisplayPosition(fset, obj.Pos()),
+		Pos:     runner.DisplayPosition(fset, obj.Pos()),
 		Message: fmt.Sprintf("%s %s is unused", typString(obj), name),
 		Check:   checkName,
 	}

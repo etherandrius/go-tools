@@ -4,6 +4,7 @@
 package stylecheck
 
 import (
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -12,7 +13,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"honnef.co/go/tools/code"
-	"honnef.co/go/tools/config"
+	"honnef.co/go/tools/lint/lintutil"
 	"honnef.co/go/tools/report"
 )
 
@@ -74,11 +75,7 @@ func CheckNames(pass *analysis.Pass) (interface{}, error) {
 		}
 	}
 
-	il := config.For(pass).Initialisms
-	initialisms := make(map[string]bool, len(il))
-	for _, word := range il {
-		initialisms[word] = true
-	}
+	initialisms := pass.Analyzer.Flags.Lookup("initialisms").Value.(flag.Getter).Get().(lintutil.StringSet)
 	for _, f := range pass.Files {
 		// Package names need slightly different handling than other names.
 		if !strings.HasSuffix(f.Name.Name, "_test") && strings.Contains(f.Name.Name, "_") {

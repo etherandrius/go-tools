@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"golang.org/x/tools/go/analysis"
-	"honnef.co/go/tools/lint"
 	"honnef.co/go/tools/lint/lintutil"
 	"honnef.co/go/tools/simple"
 	"honnef.co/go/tools/staticcheck"
@@ -39,6 +38,5 @@ func main() {
 		}
 		u.Debug = f
 	}
-	cums := []lint.CumulativeChecker{u}
-	lintutil.ProcessFlagSet(cs, cums, fs)
+	lintutil.ProcessFlagSet(cs, fs)
 }

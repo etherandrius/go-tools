@@ -3,15 +3,11 @@ package config
 import (
 	"bytes"
 	"fmt"
-	"go/ast"
-	"go/token"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"golang.org/x/tools/go/analysis"
 )
 
 // Dir looks at a list of absolute file names, which should make up a
@@ -46,37 +42,6 @@ func Dir(files []string) string {
 
 	dir := filepath.Dir(path)
 	return dir
-}
-
-func dirAST(files []*ast.File, fset *token.FileSet) string {
-	names := make([]string, len(files))
-	for i, f := range files {
-		names[i] = fset.PositionFor(f.Pos(), true).Filename
-	}
-	return Dir(names)
-}
-
-var Analyzer = &analysis.Analyzer{
-	Name: "config",
-	Doc:  "loads configuration for the current package tree",
-	Run: func(pass *analysis.Pass) (interface{}, error) {
-		dir := dirAST(pass.Files, pass.Fset)
-		if dir == "" {
-			cfg := DefaultConfig
-			return &cfg, nil
-		}
-		cfg, err := Load(dir)
-		if err != nil {
-			return nil, fmt.Errorf("error loading staticcheck.conf: %s", err)
-		}
-		return &cfg, nil
-	},
-	RunDespiteErrors: true,
-	ResultType:       reflect.TypeOf((*Config)(nil)),
-}
-
-func For(pass *analysis.Pass) *Config {
-	return pass.ResultOf[Analyzer].(*Config)
 }
 
 func mergeLists(a, b []string) []string {
@@ -156,6 +121,9 @@ func (c Config) String() string {
 	return buf.String()
 }
 
+// XXX merge DefaultConfig with a list of all known check names to get a resolved list of checks
+
+// XXX compute the DefaultConfig dynamically from analyzers' flag sets
 var DefaultConfig = Config{
 	Checks: []string{"all", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022"},
 	Initialisms: []string{
