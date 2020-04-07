@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"honnef.co/go/tools/config"
+	"honnef.co/go/tools/internal/go/gcexportdata"
 	"honnef.co/go/tools/internal/cache"
 
-	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
 )
 

@@ -624,9 +624,11 @@ func genericHandle(a action, root action, queue chan action, sem *tsync.Semaphor
 
 type analyzerRunner struct {
 	pkg *loader.Package
-	// all object facts of all analyzers of our dependencies
+	// object facts of our dependencies; may contain facts of
+	// analyzers other than the current one
 	depObjFacts map[objectFactKey]analysis.Fact
-	// all package facts of all analyzers of our dependencies
+	// package facts of our dependencies; may contain facts of
+	// analyzers other than the current one
 	depPkgFacts map[packageFactKey]analysis.Fact
 	factsOnly   bool
 }
