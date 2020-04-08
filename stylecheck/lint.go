@@ -1,7 +1,6 @@
 package stylecheck // import "honnef.co/go/tools/stylecheck"
 
 import (
-	"flag"
 	"fmt"
 	"go/ast"
 	"go/constant"
@@ -14,11 +13,11 @@ import (
 	"unicode/utf8"
 
 	"honnef.co/go/tools/code"
+	"honnef.co/go/tools/config"
 	"honnef.co/go/tools/edit"
 	"honnef.co/go/tools/internal/passes/buildir"
 	"honnef.co/go/tools/ir"
 	. "honnef.co/go/tools/lint/lintdsl"
-	"honnef.co/go/tools/lint/lintutil"
 	"honnef.co/go/tools/pattern"
 	"honnef.co/go/tools/report"
 
@@ -67,14 +66,15 @@ func CheckPackageComment(pass *analysis.Pass) (interface{}, error) {
 }
 
 func CheckDotImports(pass *analysis.Pass) (interface{}, error) {
-	whitelist := pass.Analyzer.Flags.Lookup("whitelist").Value.(flag.Getter).Get().(lintutil.StringSet)
-
 	for _, f := range pass.Files {
+	imports:
 		for _, imp := range f.Imports {
 			path := imp.Path.Value
 			path = path[1 : len(path)-1]
-			if whitelist[path] {
-				continue
+			for _, w := range config.For(pass).DotImportWhitelist {
+				if w == path {
+					continue imports
+				}
 			}
 
 			if imp.Name != nil && imp.Name.Name == "." && !code.IsInTest(pass, f) {
@@ -582,7 +582,11 @@ var httpStatusCodes = map[int]string{
 }
 
 func CheckHTTPStatusCodes(pass *analysis.Pass) (interface{}, error) {
-	whitelist := pass.Analyzer.Flags.Lookup("whitelist").Value.(flag.Getter).Get().(lintutil.StringSet)
+	whitelist := map[string]bool{}
+	for _, code := range config.For(pass).HTTPStatusCodeWhitelist {
+		whitelist[code] = true
+	}
+
 	fn := func(node ast.Node) {
 		call := node.(*ast.CallExpr)
 

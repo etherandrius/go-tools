@@ -146,9 +146,3 @@ var Analyzers = lintutil.InitializeAnalyzers(Docs, map[string]*analysis.Analyzer
 		Requires: []*analysis.Analyzer{inspect.Analyzer, facts.Generated},
 	},
 })
-
-func init() {
-	Analyzers["S1005"].Flags.Var(lintutil.NewVersionFlag(), "go", "target Go version")
-	Analyzers["S1016"].Flags.Var(lintutil.NewVersionFlag(), "go", "target Go version")
-	Analyzers["S1024"].Flags.Var(lintutil.NewVersionFlag(), "go", "target Go version")
-}

@@ -1,5 +1,7 @@
 package runner
 
+// XXX what happened to FilterChecks?
+
 // After we've analyzed a package, we write its facts to disk and
 // clear them from memory. When a dependent needs the facts, it will
 // load them from disk. This uses up additional CPU resources, but has
