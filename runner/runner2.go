@@ -1,8 +1,5 @@
 package runner
 
-// XXX somewhere along the way, we forgot how to print related
-// information
-
 // After we've analyzed a package, we write its facts to disk and
 // clear them from memory. When a dependent needs the facts, it will
 // load them from disk. This uses up additional CPU resources, but has
@@ -381,7 +378,6 @@ func (r *Runner) do(act action) error {
 		// us to immediately convert them to another format.
 		gobFacts := &bytes.Buffer{}
 		enc := gob.NewEncoder(gobFacts)
-		// gobFacts := make([]gobFact, 0, len(result.objFacts)+len(result.pkgFacts))
 		for _, f := range result.objFacts {
 			objPath, err := objectpath.For(f.Object)
 			if err != nil {
@@ -444,6 +440,13 @@ func (r *Runner) do(act action) error {
 					})
 				}
 				d.SuggestedFixed = append(d.SuggestedFixed, s)
+			}
+			for _, rel := range diag.Related {
+				d.Related = append(d.Related, RelatedInformation{
+					Pos:     DisplayPosition(result.lpkg.Fset, rel.Pos),
+					End:     DisplayPosition(result.lpkg.Fset, rel.End),
+					Message: rel.Message,
+				})
 			}
 			if err := enc.Encode(d); err != nil {
 				return fmt.Errorf("failed gob encoding data: %w", err)
@@ -933,30 +936,6 @@ func allAnalyzers(analyzers []*analysis.Analyzer) []*analysis.Analyzer {
 		dfs(a)
 	}
 	return out
-}
-
-func printGraph(pkgs []*packageAction) {
-	fmt.Println("digraph{")
-	for _, pkg := range pkgs {
-		path := "<root>"
-		if pkg.Package != nil {
-			path = pkg.Package.PkgPath
-		}
-		fmt.Printf("%q", path)
-		if pkg.failed {
-			if len(pkg.errors) > 0 {
-				fmt.Print("[color=red]")
-			} else {
-				fmt.Print("[color=orange]")
-			}
-		}
-		fmt.Print(";\n")
-		for _, dep := range pkg.deps {
-			dep := dep.(*packageAction)
-			fmt.Printf("%q -> %q;\n", path, dep.Package.PkgPath)
-		}
-	}
-	fmt.Println("}")
 }
 
 func (r *Runner) Run(cfg *packages.Config, analyzers []*analysis.Analyzer, patterns []string) ([]Result, error) {
