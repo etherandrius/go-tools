@@ -39,8 +39,7 @@ var Analyzers = lintutil.InitializeAnalyzers(Docs, map[string]*analysis.Analyzer
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
 	},
 	"ST1012": {
-		Run:      CheckErrorVarNames,
-		Requires: []*analysis.Analyzer{config.Analyzer},
+		Run: CheckErrorVarNames,
 	},
 	"ST1013": {
 		Run: CheckHTTPStatusCodes,
@@ -65,7 +64,7 @@ var Analyzers = lintutil.InitializeAnalyzers(Docs, map[string]*analysis.Analyzer
 	},
 	"ST1019": {
 		Run:      CheckDuplicatedImports,
-		Requires: []*analysis.Analyzer{facts.Generated, config.Analyzer},
+		Requires: []*analysis.Analyzer{facts.Generated},
 	},
 	"ST1020": {
 		Run:      CheckExportedFunctionDocs,

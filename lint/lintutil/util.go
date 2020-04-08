@@ -428,6 +428,11 @@ func InitializeAnalyzers(docs map[string]*lint.Documentation, analyzers map[stri
 			panic(fmt.Sprintf("missing documentation for check %s", k))
 		}
 		vc.Doc = doc.String()
+		if vc.Flags.Usage == nil {
+			fs := flag.NewFlagSet("", flag.PanicOnError)
+			fs.Var(NewVersionFlag(), "go", "Target Go version")
+			vc.Flags = *fs
+		}
 	}
 	return out
 }
