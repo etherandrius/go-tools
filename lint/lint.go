@@ -148,27 +148,6 @@ type Linter struct {
 	RepeatAnalyzers uint
 }
 
-func parsePosition(pos string) token.Position {
-	if pos == "" {
-		return token.Position{}
-	}
-	var posn token.Position
-	off2 := strings.LastIndexByte(pos, ':')
-	if off2 == -1 {
-		panic(fmt.Sprintf("no colon in %q", pos))
-		// XXX
-	}
-	off1 := strings.LastIndexByte(pos[:off2], ':')
-	if off2 == -1 {
-		panic(fmt.Sprintf("no colon in %q", pos))
-		// XXX
-	}
-	posn.Filename = pos[:off1]
-	posn.Line, _ = strconv.Atoi(pos[off1+1 : off2])
-	posn.Column, _ = strconv.Atoi(pos[off2+1:])
-	return posn
-}
-
 func (l *Linter) Lint(cfg *packages.Config, patterns []string) ([]Problem, error) {
 	r, err := runner.New(l.Config)
 	if err != nil {
