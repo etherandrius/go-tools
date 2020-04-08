@@ -30,7 +30,6 @@ import (
 	"honnef.co/go/tools/lint"
 	"honnef.co/go/tools/lint/lintutil/format"
 	"honnef.co/go/tools/version"
-	"honnef.co/go/tools/vettool"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/buildutil"
@@ -274,7 +273,7 @@ func ProcessFlagSet(cs []*analysis.Analyzer, fs *flag.FlagSet) {
 	for i, a := range cs {
 		analyzerNames[i] = a.Name
 	}
-	shouldExit := vettool.FilterChecks(analyzerNames, fail)
+	shouldExit := lint.FilterChecks(analyzerNames, fail)
 	shouldExit["compile"] = true
 
 	total = len(ps)
