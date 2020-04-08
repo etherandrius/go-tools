@@ -79,7 +79,6 @@ func CheckNames(pass *analysis.Pass) (interface{}, error) {
 	for _, word := range il {
 		initialisms[word] = true
 	}
-
 	for _, f := range pass.Files {
 		// Package names need slightly different handling than other names.
 		if !strings.HasSuffix(f.Name.Name, "_test") && strings.Contains(f.Name.Name, "_") {

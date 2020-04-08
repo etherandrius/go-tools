@@ -586,7 +586,6 @@ func CheckHTTPStatusCodes(pass *analysis.Pass) (interface{}, error) {
 	for _, code := range config.For(pass).HTTPStatusCodeWhitelist {
 		whitelist[code] = true
 	}
-
 	fn := func(node ast.Node) {
 		call := node.(*ast.CallExpr)
 
