@@ -1,20 +1,111 @@
+// Package runner implements a go/analysis runner. It makes heavy use
+// of on-disk caching to reduce overall memory usage and to speed up
+// repeat runs.
+//
+// Public API
+//
+// A Runner maps a list of analyzers and package patterns to a list of
+// results. Results provide access to diagnostics, directives, errors
+// encountered, and information about packages. Results explicitly do
+// not contain ASTs or type information. All position information is
+// returned in the form of token.Position, not token.Pos. All work
+// that requires access to the loaded representation of a package has
+// to occur inside analyzers.
+//
+// Planning and execution
+//
+// Analyzing packages is split into two phases: planning and
+// execution.
+//
+// During planning, a directed acyclic graph of package dependencies
+// is computed. We materialize the full graph so that we can execute
+// the graph from the bottom up, without keeping unnecessary data in
+// memory during a DFS and with simplified parallel execution.
+//
+// During execution, leaf nodes (nodes with no outstanding
+// dependencies) get executed in parallel, bounded by a semaphore
+// sized according to the number of CPUs. Conceptually, this happens
+// in a loop, processing new leaf nodes as they appear, until no more
+// nodes are left. In the actual implementation, nodes know their
+// dependents, and the last dependency of a node to be processed is
+// responsible for scheduling its dependent.
+//
+// The graph is rooted at a synthetic root node. Upon execution of the
+// root node, the algorithm terminates.
+//
+// Analyzing a package repeats the same planning + execution steps,
+// but this time on a graph of analyzers for the package. Parallel
+// execution of individual analyzers is bounded by the same semaphore
+// as executing packages.
+//
+// Parallelism
+//
+// Actions are executed in parallel where the dependency graph allows.
+// Overall parallelism is bounded by a semaphore, sized according to
+// runtime.NumCPU(). Each concurrently processed package takes up a
+// token, as does each analyzer – but a package can always execute at
+// least one analyzer, using the package's token.
+//
+// Depending on the overall shape of the graph, there may be NumCPU
+// packages running a single analyzer each, a single package running
+// NumCPU analyzers, or anything in between.
+//
+// Total memory consumption grows roughly linearly with the number of
+// CPUs, while total execution time is inversely proportional to the
+// number of CPUs. Overall, parallelism is affected by the shape of
+// the dependency graph. A lot of inter-connected packages will see
+// less parallelism than a lot of independent packages.
+//
+// Caching
+//
+// The runner caches facts, directives and diagnostics in a
+// content-addressable cache that is designed after Go's own cache.
+// Additionally, it makes use of Go's export data.
+//
+// This cache not only speeds up repeat runs, it also reduces peak
+// memory usage. When we've analyzed a package, we cache the results
+// and drop them from memory. When a dependent needs any of this
+// information, or when analysis is complete and we wish to render the
+// results, the data gets loaded from disk again.
+//
+// Data only exists in memory when it is immediately needed, not
+// retained for possible future uses. This trades increased CPU usage
+// for reduced memory usage. A single dependency may be loaded many
+// times over, but it greatly reduces peak memory usage, as an
+// arbitrary amount of time may pass between analyzing a dependency
+// and its dependent, during which other packages will be processed.
 package runner
 
-// XXX what happened to FilterChecks?
-
-// After we've analyzed a package, we write its facts to disk and
-// clear them from memory. When a dependent needs the facts, it will
-// load them from disk. This uses up additional CPU resources, but has
-// the benefit of keeping peak memory usage lower. Especially when a
-// lot of time passes between analyzing a dependency and its
-// dependent, we're better off freeing memory. Most of our users
-// complain about memory usage, not CPU usage.
+// OPT(dh): right now, each package is analyzed completely
+// independently. Each package loads all of its dependencies from
+// export data and cached facts. If we have two packages A and B,
+// which both depend on C, and which both get analyzed in parallel,
+// then C will be loaded twice. This wastes CPU time and memory. It
+// would be nice if we could reuse a single C for the analysis of both
+// A and B.
 //
-// If we're willing to add extra complexity, then this model can be
-// further optimized. We could keep data in memory for a fixed period
-// of time before releasing it. And when two packages A and B both
-// depend on C and execute at the same time, then data only needs to
-// be loaded once.
+// We can't reuse the actual types.Package or facts, because each
+// package gets its own token.FileSet. Sharing a global FileSet has
+// several drawbacks, including increased memory usage and running the
+// risk of running out of FileSet address space.
+//
+// We could however avoid loading the same raw export data from disk
+// twice, as well as deserializing gob data twice. One possible
+// solution would be a duplicate-suppressing in-memory cache that
+// caches data for a limited amount of time. When the same package
+// needs to be loaded twice in close succession, we can reuse work,
+// without holding unnecessary data in memory for an extended period
+// of time.
+//
+// We would likely need to do extensive benchmarking to figure out how
+// long to keep data around to find a sweetspot where we reduce CPU
+// load without increasing memory usage.
+//
+// We can probably populate the cache after we've analyzed a package,
+// on the assumption that it will have to be loaded again in the near
+// future.
+
+// XXX what happened to FilterChecks?
 
 import (
 	"bytes"
@@ -52,6 +143,7 @@ type Diagnostic struct {
 	Related        []RelatedInformation
 }
 
+// RelatedInformation provides additional context for a diagnostic.
 type RelatedInformation struct {
 	Pos     token.Position
 	End     token.Position
@@ -67,6 +159,18 @@ type TextEdit struct {
 	Pos     token.Position
 	End     token.Position
 	NewText []byte
+}
+
+// A directive is a comment of the form '//lint:<command>
+// [arguments...]'. It represents instructions to the static analysis
+// tool.
+type Directive struct {
+	Command   string
+	Arguments []string
+	// The position of the comment
+	DirectivePosition token.Position
+	// The position of the node that the comment is attached to
+	NodePosition token.Position
 }
 
 // A Result describes the result of analyzing a single package.
@@ -234,22 +338,15 @@ func (act *analyzerAction) String() string {
 	return fmt.Sprintf("analyzerAction(%s)", act.Analyzer)
 }
 
-type Directive struct {
-	Command           string
-	Arguments         []string
-	DirectivePosition token.Position
-	NodePosition      token.Position
-}
-
+// A Runner executes analyzers on packages.
 type Runner struct {
 	// Config that gets merged with per-package configs
-	cfg   config.Config
-	cache *cache.Cache
-	// all analyzers, including recursive dependencies
-	analyzers []*analysis.Analyzer
+	cfg       config.Config
+	cache     *cache.Cache
 	semaphore tsync.Semaphore
 }
 
+// New returns a new Runner.
 func New(cfg config.Config) (*Runner, error) {
 	cache, err := cache.Default()
 	if err != nil {
@@ -263,14 +360,6 @@ func New(cfg config.Config) (*Runner, error) {
 	}, nil
 }
 
-// Planning phase.
-//
-// We materialize the full dependency graph in its own step, instead
-// of simply executing analyses as we run the DFS. This allows us to
-// process the graph from the bottom up, triggering actions as
-// dependencies are completed. This simplifies parallelism, because
-// dependents won't need to explicitly wait for the completion of
-// their dependencies.
 func newPackageActionRoot(pkg *loader.PackageSpec, cache map[*loader.PackageSpec]*packageAction) *packageAction {
 	a := newPackageAction(pkg, cache)
 	a.factsOnly = false
@@ -337,9 +426,7 @@ func newAnalyzerAction(an *analysis.Analyzer, cache map[*analysis.Analyzer]*anal
 	return a
 }
 
-// execution phase
-
-func (r *Runner) do(act action) error {
+func (r *Runner) do(act action, analyzers []*analysis.Analyzer) error {
 	a := act.(*packageAction)
 
 	// compute hash of action
@@ -368,7 +455,7 @@ func (r *Runner) do(act action) error {
 		f3, _, err3 = r.cache.GetFile(cache.Subkey(a.hash, "diagnostics"))
 	}
 	if err1 != nil || err2 != nil || err3 != nil {
-		result, err := r.doUncached(a)
+		result, err := r.doUncached(a, analyzers)
 		if err != nil {
 			return err
 		}
@@ -494,7 +581,7 @@ type packageActionResult struct {
 	lpkg     *loader.Package
 }
 
-func (r *Runner) doUncached(a *packageAction) (packageActionResult, error) {
+func (r *Runner) doUncached(a *packageAction, analyzers []*analysis.Analyzer) (packageActionResult, error) {
 	// OPT(dh): for a -> b; c -> b; if both a and b are being
 	// processed concurrently, we shouldn't load b's export data
 	// twice.
@@ -515,7 +602,7 @@ func (r *Runner) doUncached(a *packageAction) (packageActionResult, error) {
 	}
 
 	dirs := parseDirectives(pkg)
-	objFacts, pkgFacts, diagnostics, err := r.runAnalyzers(a, pkg)
+	objFacts, pkgFacts, diagnostics, err := r.runAnalyzers(a, pkg, analyzers)
 
 	return packageActionResult{
 		objFacts: objFacts,
@@ -759,7 +846,7 @@ func (ar *analyzerRunner) do(act action) error {
 	return nil
 }
 
-func (r *Runner) runAnalyzers(pkgAct *packageAction, pkg *loader.Package) ([]analysis.ObjectFact, []analysis.PackageFact, []analysis.Diagnostic, error) {
+func (r *Runner) runAnalyzers(pkgAct *packageAction, pkg *loader.Package, analyzers []*analysis.Analyzer) ([]analysis.ObjectFact, []analysis.PackageFact, []analysis.Diagnostic, error) {
 	depObjFacts := map[objectFactKey]analysis.Fact{}
 	depPkgFacts := map[packageFactKey]analysis.Fact{}
 	for _, dep := range pkgAct.deps {
@@ -772,7 +859,7 @@ func (r *Runner) runAnalyzers(pkgAct *packageAction, pkg *loader.Package) ([]ana
 	// (depending on act.factsOnly), we should cache it in the runner.
 	analyzerActionCache := map[*analysis.Analyzer]*analyzerAction{}
 	root := &analyzerAction{}
-	for _, a := range r.analyzers {
+	for _, a := range analyzers {
 		// When analyzing non-initial packages, we only care about
 		// analyzers that produce facts.
 		if !pkgAct.factsOnly || len(a.FactTypes) > 0 {
@@ -940,9 +1027,20 @@ func allAnalyzers(analyzers []*analysis.Analyzer) []*analysis.Analyzer {
 	return out
 }
 
+// Run loads the packages specified by patterns, runs analyzers on
+// them and returns the results. Each result corresponds to a single
+// package. Results will be returned for all packages, including
+// dependencies. Errors specific to packages will be reported in the
+// respective results.
+//
+// If cfg is nil, a default config will be used. Otherwise, cfg will
+// be used, with the exception of the Mode field.
+//
+// Run can be called multiple times on the same Runner and it is safe
+// for concurrent use. All runs will share the same semaphore.
 func (r *Runner) Run(cfg *packages.Config, analyzers []*analysis.Analyzer, patterns []string) ([]Result, error) {
-	r.analyzers = allAnalyzers(analyzers)
-	registerGobTypes(r.analyzers)
+	analyzers = allAnalyzers(analyzers)
+	registerGobTypes(analyzers)
 
 	lpkgs, err := loader.Graph(cfg, patterns...)
 	if err != nil {
@@ -971,7 +1069,9 @@ func (r *Runner) Run(cfg *packages.Config, analyzers []*analysis.Analyzer, patte
 
 	for item := range queue {
 		r.semaphore.Acquire()
-		go genericHandle(item, root, queue, &r.semaphore, r.do)
+		go genericHandle(item, root, queue, &r.semaphore, func(act action) error {
+			return r.do(act, analyzers)
+		})
 	}
 
 	out := make([]Result, len(all))
