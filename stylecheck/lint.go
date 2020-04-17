@@ -373,11 +373,26 @@ func CheckErrorStrings(pass *analysis.Pass) (interface{}, error) {
 				if !ok {
 					continue
 				}
-				if !code.IsCallToAny(call.Common(), "errors.New", "fmt.Errorf") {
+
+				var argIdx uint
+				if !code.IsCallToAny(call.Common(), "errors.New", "fmt.Errorf", "witchcraft-go-error.Error") {
 					continue
+				} else {
+					argIdx = 0
+				}
+				if !code.IsCallToAny(call.Common(), "witchcraft-go-error.Wrap", "witchcraft-go-error.ErrorWithContextParams") {
+					continue
+				} else {
+					argIdx = 1
+				}
+				if !code.IsCallToAny(call.Common(), "witchcraft-go-error.WrapWithContextParams") {
+					continue
+				} else {
+					argIdx = 2
 				}
 
-				k, ok := call.Common().Args[0].(*ir.Const)
+
+				k, ok := call.Common().Args[argIdx].(*ir.Const)
 				if !ok {
 					continue
 				}
