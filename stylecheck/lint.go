@@ -374,23 +374,22 @@ func CheckErrorStrings(pass *analysis.Pass) (interface{}, error) {
 					continue
 				}
 
+				witchPrefix := "github.com/palantir/witchcraft-go-error"
 				var argIdx uint
-				if !code.IsCallToAny(call.Common(), "errors.New", "fmt.Errorf", "witchcraft-go-error.Error") {
-					continue
-				} else {
-					argIdx = 0
-				}
-				if !code.IsCallToAny(call.Common(), "witchcraft-go-error.Wrap", "witchcraft-go-error.ErrorWithContextParams") {
-					continue
-				} else {
-					argIdx = 1
-				}
-				if !code.IsCallToAny(call.Common(), "witchcraft-go-error.WrapWithContextParams") {
-					continue
-				} else {
-					argIdx = 2
-				}
+				fmt.Println(code.CallName(call.Common()))
+				zero := code.IsCallToAny(call.Common(), "errors.New", "fmt.Errorf", witchPrefix +".Error")
+				one := code.IsCallToAny(call.Common(), witchPrefix + ".Wrap", witchPrefix + ".ErrorWithContextParams")
+				two := code.IsCallToAny(call.Common(), witchPrefix + ".WrapWithContextParams")
 
+				if zero {
+					argIdx = 0
+				} else if one {
+					argIdx = 1
+				} else if two {
+					argIdx = 2
+				} else {
+					continue
+				}
 
 				k, ok := call.Common().Args[argIdx].(*ir.Const)
 				if !ok {
