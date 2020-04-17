@@ -376,7 +376,6 @@ func CheckErrorStrings(pass *analysis.Pass) (interface{}, error) {
 
 				witchPrefix := "github.com/palantir/witchcraft-go-error"
 				var argIdx uint
-				fmt.Println(code.CallName(call.Common()))
 				zero := code.IsCallToAny(call.Common(), "errors.New", "fmt.Errorf", witchPrefix +".Error")
 				one := code.IsCallToAny(call.Common(), witchPrefix + ".Wrap", witchPrefix + ".ErrorWithContextParams")
 				two := code.IsCallToAny(call.Common(), witchPrefix + ".WrapWithContextParams")
