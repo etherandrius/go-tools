@@ -22,6 +22,7 @@ import (
 	"honnef.co/go/tools/go/ir/irutil"
 	"honnef.co/go/tools/go/types/typeutil"
 	"honnef.co/go/tools/internal/passes/buildir"
+
 	"honnef.co/go/tools/pattern"
 
 	"golang.org/x/tools/go/analysis"
@@ -370,16 +371,30 @@ func CheckErrorStrings(pass *analysis.Pass) (interface{}, error) {
 		}
 		for _, block := range fn.Blocks {
 		instrLoop:
+			// errors
 			for _, ins := range block.Instrs {
 				call, ok := ins.(*ir.Call)
 				if !ok {
 					continue
 				}
-				if !irutil.IsCallToAny(call.Common(), "errors.New", "fmt.Errorf") {
+
+				witchPrefix := "github.com/palantir/witchcraft-go-error"
+				var argIdx uint
+				zero := irutil.IsCallToAny(call.Common(), "errors.New", "fmt.Errorf", witchPrefix +".Error")
+				one := irutil.IsCallToAny(call.Common(), witchPrefix + ".Wrap", witchPrefix + ".ErrorWithContextParams")
+				two := irutil.IsCallToAny(call.Common(), witchPrefix + ".WrapWithContextParams")
+
+				if zero {
+					argIdx = 0
+				} else if one {
+					argIdx = 1
+				} else if two {
+					argIdx = 2
+				} else {
 					continue
 				}
 
-				k, ok := call.Common().Args[0].(*ir.Const)
+				k, ok := call.Common().Args[argIdx].(*ir.Const)
 				if !ok {
 					continue
 				}
@@ -429,6 +444,68 @@ func CheckErrorStrings(pass *analysis.Pass) (interface{}, error) {
 				// It could still be a proper noun, though.
 
 				report.Report(pass, call, "error strings should not be capitalized")
+			}
+
+			// logs
+			for _, ins := range block.Instrs {
+				call, ok := ins.(*ir.Call)
+				if !ok {
+					continue
+				}
+
+				logs := []string{
+					"(github.com/palantir/witchcraft-go-logging/wlog/svclog/svc1log.Logger).Error",
+					"(github.com/palantir/witchcraft-go-logging/wlog/svclog/svc1log.Logger).Info",
+					"(github.com/palantir/witchcraft-go-logging/wlog/svclog/svc1log.Logger).Warn",
+					"(github.com/palantir/witchcraft-go-logging/wlog/svclog/svc1log.Logger).Debug",
+				}
+				if !call.Call.IsInvoke() {
+					continue
+				}
+
+				cont := true
+				for _, name := range logs {
+					if typeutil.FuncName(call.Call.Method) == name {
+						cont = false
+						break
+					}
+				}
+
+				if cont {
+					continue
+				}
+
+				k, ok := call.Common().Args[0].(*ir.Const)
+				if !ok {
+					continue
+				}
+
+				s := constant.StringVal(k.Value)
+				if len(s) == 0 {
+					continue
+				}
+
+				idx := strings.IndexByte(s, ' ')
+				if idx == -1 {
+					// single word error message, probably not a real
+					// error but something used in tests or during
+					// debugging
+					continue
+				}
+				word := s[:idx]
+
+				first, _ := utf8.DecodeRuneInString(word)
+				if unicode.IsUpper(first) {
+					continue
+				}
+
+				word = strings.TrimRightFunc(word, func(r rune) bool { return unicode.IsPunct(r) })
+				if objNames[fn.Package()][word] {
+					// Word is probably the name of a function or type in this package
+					continue
+				}
+
+				report.Report(pass, call, "log strings should be capitalized")
 			}
 		}
 	}
